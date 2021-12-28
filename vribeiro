@@ -1,0 +1,62 @@
+//Área de estudo
+var area_estudo = ee.FeatureCollection('users/vribeiro/territorio_id')
+                  .filter(ee.Filter.or(ee.Filter.eq('CD_TI','03'),
+                  ee.Filter.eq('CD_TI','20'),
+                  ee.Filter.eq('CD_TI','09')));
+                  
+var empty = ee.Image().byte();
+var outline = empty.paint({
+	featureCollection: area_estudo,
+	color:1,
+	width:2
+
+});
+Map.addLayer (outline, {palette: '#000000'}, 'Territórios Identidade Café Planalto', 1);
+Map.centerObject(area_estudo, 7);
+
+//Coleção de Imagens 
+var precipitation = ee.ImageCollection("NASA/GPM_L3/IMERG_V06")
+                    .select('precipitationCal')
+                    .filterDate('2021-12-20',ee.Date(Date.now()))
+                    .filterBounds(area_estudo);
+print ('Coleção e propriedades',precipitation);
+
+function date (image) {
+	return image.set ({date: image.date().format('yyyy-MM-dd')});
+
+}
+
+var precipitation_date = precipitation.map(date);
+print('Coleção e propriedades',precipitation_date);
+
+var feats = precipitation_date.map(function(image){
+          var stats = image.clip(area_estudo).reduceRegions({
+            collection:  area_estudo,
+            reducer:ee.Reducer.mean,
+            scale:10000
+          });
+      
+          stats = stats.map(function(f) {return f.set({date: image.get('date')})});
+          return stats.copyProperties(image,['system:time_start']);
+          });
+          
+          var precipitation_mean = feats.flatten()
+              .select(['date','NOME','mean']);
+
+print('Informações para tabela',precipitation_mean);
+
+Export.table.toDrive ({
+	collection: precipitarion_mean,
+  description: 'CSV_Export',
+  folder: 'GEE_Scripts',
+  fileNamePrefix: 'Precipitation',
+  fileFormat: 'CSV',
+  selectors: ['NOME','date','mean']
+});
+
+Map.addLayer(precipitation_date.sum().clip(area_estudo), {opacity:1,
+            bands: ['precipitacionCal'],
+            min: 60,
+            max: 341,
+            palette:['red','orange','yellow','green','cyan','blue','darkblue']}
+            , 'Precipitação GPM',1);
